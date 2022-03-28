@@ -33,11 +33,11 @@
 
 
 /******************************读前须知*****************************************/
-/*imu为x轴向前,y轴向左,z轴向上的右手坐标系，
-  velodyne lidar被安装为x轴向前,y轴向左,z轴向上的右手坐标系，
-  scanRegistration会把两者通过交换坐标轴，都统一到z轴向前,x轴向左,y轴向上的右手坐标系
-  ，这是J. Zhang的论文里面使用的坐标系
-  交换后：R = Ry(yaw)*Rx(pitch)*Rz(roll)
+/*imu is a right-handed coordinate system with the x-axis forward, the y-axis left, and the z-axis upward,
+The velodyne lidar is mounted as a right-handed coordinate system with the x-axis forward, the y-axis left, and the z-axis up,
+scanRegistration will unify the two to the right-handed coordinate system with the z-axis forward, the x-axis left, and the y-axis up
+, which is the coordinate system used in J. Zhang's paper
+After swapping: R = Ry(yaw)*Rx(pitch)*Rz(roll)
 *******************************************************************************/
 
 #include <cmath>
@@ -62,49 +62,49 @@ using std::sin;
 using std::cos;
 using std::atan2;
 
-//扫描周期, velodyne频率10Hz，周期0.1s
+//Scanning period, velodyne frequency 10Hz, period 0.1s
 const double scanPeriod = 0.1;
 
-//初始化控制变量
-const int systemDelay = 20;//弃用前20帧初始数据
+//Initialize control variables
+const int systemDelay = 20;//Deprecate the first 20 frames of initial data
 int systemInitCount = 0;
 bool systemInited = false;
 
-//激光雷达线数
+//Lidar line count
 const int N_SCANS = 16;
 
-//点云曲率, 40000为一帧点云中点的最大数量
+//Point cloud curvature, 40000 is the maximum number of points in a frame of point cloud
 float cloudCurvature[40000];
-//曲率点对应的序号
+//The serial number corresponding to the curvature point
 int cloudSortInd[40000];
-//点是否筛选过标志：0-未筛选过，1-筛选过
+//Whether the point is filtered flag: 0 unfiltered, 1 filtered
 int cloudNeighborPicked[40000];
-//点分类标号:2-代表曲率很大，1-代表曲率比较大,-1-代表曲率很小，0-曲率比较小(其中1包含了2,0包含了1,0和1构成了点云全部的点)
+//Point classification label: 2 represents a large curvature, 1 represents a relatively large curvature, 1 represents a small curvature, and 0 represents a relatively small curvature (where 1 contains 2, 0 contains 1, 0 and 1 constitute all the points of the point cloud )
 int cloudLabel[40000];
 
-//imu时间戳大于当前点云时间戳的位置
+//Where the Imu timestamp is greater than the current point cloud timestamp
 int imuPointerFront = 0;
-//imu最新收到的点在数组中的位置
+//The position in the array of the most recent point received by Imu
 int imuPointerLast = -1;
-//imu循环队列长度
+//Imu circular queue length
 const int imuQueLength = 200;
 
-//点云数据开始第一个点的位移/速度/欧拉角
+//The displacement/velocity/Eulerian angle of the first point in the point cloud data
 float imuRollStart = 0, imuPitchStart = 0, imuYawStart = 0;
 float imuRollCur = 0, imuPitchCur = 0, imuYawCur = 0;
 
 float imuVeloXStart = 0, imuVeloYStart = 0, imuVeloZStart = 0;
 float imuShiftXStart = 0, imuShiftYStart = 0, imuShiftZStart = 0;
 
-//当前点的速度，位移信息
+//Velocity and displacement information of the current point
 float imuVeloXCur = 0, imuVeloYCur = 0, imuVeloZCur = 0;
 float imuShiftXCur = 0, imuShiftYCur = 0, imuShiftZCur = 0;
 
-//每次点云数据当前点相对于开始第一个点的畸变位移，速度
+//Distortion displacement of the current point of the point cloud data relative to the first point at the beginning, speed
 float imuShiftFromStartXCur = 0, imuShiftFromStartYCur = 0, imuShiftFromStartZCur = 0;
 float imuVeloFromStartXCur = 0, imuVeloFromStartYCur = 0, imuVeloFromStartZCur = 0;
 
-//IMU信息
+//Imu information
 double imuTime[imuQueLength] = {0};
 float imuRoll[imuQueLength] = {0};
 float imuPitch[imuQueLength] = {0};
@@ -129,11 +129,11 @@ ros::Publisher pubSurfPointsFlat;
 ros::Publisher pubSurfPointsLessFlat;
 ros::Publisher pubImuTrans;
 
-//计算局部坐标系下点云中的点相对第一个开始点的由于加减速运动产生的位移畸变
+//Calculate the displacement distortion caused by the acceleration and deceleration of the point in the point cloud relative to the first starting point in the local coordinate system
 void ShiftToStartIMU(float pointTime)
 {
-  //计算相对于第一个点由于加减速产生的畸变位移(全局坐标系下畸变位移量delta_Tg)
-  //imuShiftFromStartCur = imuShiftCur - (imuShiftStart + imuVeloStart * pointTime)
+  //Calculate the distortion displacement due to acceleration and deceleration relative to the first point (distortion displacement delta_Tg in the global coordinate system)
+  //imuShiftFromStartCur = imuShiftCur -(imuShiftStart + imuVeloStart *pointTime)
   imuShiftFromStartXCur = imuShiftXCur - imuShiftXStart - imuVeloXStart * pointTime;
   imuShiftFromStartYCur = imuShiftYCur - imuShiftYStart - imuVeloYStart * pointTime;
   imuShiftFromStartZCur = imuShiftZCur - imuShiftZStart - imuVeloZStart * pointTime;
@@ -143,26 +143,26 @@ void ShiftToStartIMU(float pointTime)
   transfrom from the global frame to the local frame
   *********************************************************************************/
 
-  //绕y轴旋转(-imuYawStart)，即Ry(yaw).inverse
+  //Rotate around the y axis ( imu yaw start ), ie ry(yaw).inverse
   float x1 = cos(imuYawStart) * imuShiftFromStartXCur - sin(imuYawStart) * imuShiftFromStartZCur;
   float y1 = imuShiftFromStartYCur;
   float z1 = sin(imuYawStart) * imuShiftFromStartXCur + cos(imuYawStart) * imuShiftFromStartZCur;
 
-  //绕x轴旋转(-imuPitchStart)，即Rx(pitch).inverse
+  //Rotate around the x-axis (imu pitch start), ie rx(pitch).inverse
   float x2 = x1;
   float y2 = cos(imuPitchStart) * y1 + sin(imuPitchStart) * z1;
   float z2 = -sin(imuPitchStart) * y1 + cos(imuPitchStart) * z1;
 
-  //绕z轴旋转(-imuRollStart)，即Rz(pitch).inverse
+  //Rotate around the z-axis (imu roll start), ie rz(pitch).inverse
   imuShiftFromStartXCur = cos(imuRollStart) * x2 + sin(imuRollStart) * y2;
   imuShiftFromStartYCur = -sin(imuRollStart) * x2 + cos(imuRollStart) * y2;
   imuShiftFromStartZCur = z2;
 }
 
-//计算局部坐标系下点云中的点相对第一个开始点由于加减速产生的的速度畸变（增量）
+//Calculate the velocity distortion (increment) of the point in the point cloud relative to the first starting point due to acceleration and deceleration in the local coordinate system
 void VeloToStartIMU()
 {
-  //计算相对于第一个点由于加减速产生的畸变速度(全局坐标系下畸变速度增量delta_Vg)
+  //Calculate the distortion speed due to acceleration and deceleration relative to the first point (distortion speed increment delta vg in the global coordinate system)
   imuVeloFromStartXCur = imuVeloXCur - imuVeloXStart;
   imuVeloFromStartYCur = imuVeloYCur - imuVeloYStart;
   imuVeloFromStartZCur = imuVeloZCur - imuVeloZStart;
@@ -172,39 +172,39 @@ void VeloToStartIMU()
     transfrom from the global frame to the local frame
   *********************************************************************************/
   
-  //绕y轴旋转(-imuYawStart)，即Ry(yaw).inverse
+  //Rotate around the y axis ( imu yaw start ), ie ry(yaw).inverse
   float x1 = cos(imuYawStart) * imuVeloFromStartXCur - sin(imuYawStart) * imuVeloFromStartZCur;
   float y1 = imuVeloFromStartYCur;
   float z1 = sin(imuYawStart) * imuVeloFromStartXCur + cos(imuYawStart) * imuVeloFromStartZCur;
 
-  //绕x轴旋转(-imuPitchStart)，即Rx(pitch).inverse
+  //Rotate around the x-axis (imu pitch start), ie rx(pitch).inverse
   float x2 = x1;
   float y2 = cos(imuPitchStart) * y1 + sin(imuPitchStart) * z1;
   float z2 = -sin(imuPitchStart) * y1 + cos(imuPitchStart) * z1;
 
-  //绕z轴旋转(-imuRollStart)，即Rz(pitch).inverse
+  //Rotate around the z-axis (imu roll start), ie rz(pitch).inverse
   imuVeloFromStartXCur = cos(imuRollStart) * x2 + sin(imuRollStart) * y2;
   imuVeloFromStartYCur = -sin(imuRollStart) * x2 + cos(imuRollStart) * y2;
   imuVeloFromStartZCur = z2;
 }
 
-//去除点云加减速产生的位移畸变
+//Remove displacement distortion caused by point cloud acceleration and deceleration
 void TransformToStartIMU(PointType *p)
 {
   /********************************************************************************
-    Ry*Rx*Rz*Pl, transform point to the global frame
+  Ry*Rx*Rz*Pl, transform point to the global frame
   *********************************************************************************/
-  //绕z轴旋转(imuRollCur)
+  //Rotate around the z-axis (imuRollCur)
   float x1 = cos(imuRollCur) * p->x - sin(imuRollCur) * p->y;
   float y1 = sin(imuRollCur) * p->x + cos(imuRollCur) * p->y;
   float z1 = p->z;
 
-  //绕x轴旋转(imuPitchCur)
+  //Rotate around the x-axis (imu pitch cur)
   float x2 = x1;
   float y2 = cos(imuPitchCur) * y1 - sin(imuPitchCur) * z1;
   float z2 = sin(imuPitchCur) * y1 + cos(imuPitchCur) * z1;
 
-  //绕y轴旋转(imuYawCur)
+  //Rotate around the y-axis (imu yaw cur)
   float x3 = cos(imuYawCur) * x2 + sin(imuYawCur) * z2;
   float y3 = y2;
   float z3 = -sin(imuYawCur) * x2 + cos(imuYawCur) * z2;
@@ -214,23 +214,23 @@ void TransformToStartIMU(PointType *p)
     transfrom global points to the local frame
   *********************************************************************************/
   
-  //绕y轴旋转(-imuYawStart)
+  //Rotate around the y-axis ( imu yaw start )
   float x4 = cos(imuYawStart) * x3 - sin(imuYawStart) * z3;
   float y4 = y3;
   float z4 = sin(imuYawStart) * x3 + cos(imuYawStart) * z3;
 
-  //绕x轴旋转(-imuPitchStart)
+  //Rotate around the x-axis (imu pitch start)
   float x5 = x4;
   float y5 = cos(imuPitchStart) * y4 + sin(imuPitchStart) * z4;
   float z5 = -sin(imuPitchStart) * y4 + cos(imuPitchStart) * z4;
 
-  //绕z轴旋转(-imuRollStart)，然后叠加平移量
+  //Rotate around the z-axis ( imu roll start ), then superimpose the translation
   p->x = cos(imuRollStart) * x5 + sin(imuRollStart) * y5 + imuShiftFromStartXCur;
   p->y = -sin(imuRollStart) * x5 + cos(imuRollStart) * y5 + imuShiftFromStartYCur;
   p->z = z5 + imuShiftFromStartZCur;
 }
 
-//积分速度与位移
+//Integrating Velocity and Displacement
 void AccumulateIMUShift()
 {
   float roll = imuRoll[imuPointerLast];
@@ -240,27 +240,27 @@ void AccumulateIMUShift()
   float accY = imuAccY[imuPointerLast];
   float accZ = imuAccZ[imuPointerLast];
 
-  //将当前时刻的加速度值绕交换过的ZXY固定轴（原XYZ）分别旋转(roll, pitch, yaw)角，转换得到世界坐标系下的加速度值(right hand rule)
-  //绕z轴旋转(roll)
+  //Rotate the current acceleration value around the exchanged ZXY fixed axis (original XYZ) by (roll, pitch, yaw) angles, and convert to obtain the acceleration value in the world coordinate system (right hand rule)
+  //rotate around the z-axis (roll)
   float x1 = cos(roll) * accX - sin(roll) * accY;
   float y1 = sin(roll) * accX + cos(roll) * accY;
   float z1 = accZ;
-  //绕x轴旋转(pitch)
+  //rotate around the x-axis (pitch)
   float x2 = x1;
   float y2 = cos(pitch) * y1 - sin(pitch) * z1;
   float z2 = sin(pitch) * y1 + cos(pitch) * z1;
-  //绕y轴旋转(yaw)
+  //rotate around the y-axis (yaw)
   accX = cos(yaw) * x2 + sin(yaw) * z2;
   accY = y2;
   accZ = -sin(yaw) * x2 + cos(yaw) * z2;
 
-  //上一个imu点
+  //previous imu point
   int imuPointerBack = (imuPointerLast + imuQueLength - 1) % imuQueLength;
-  //上一个点到当前点所经历的时间，即计算imu测量周期
+  //The time from the previous point to the current point, that is, the calculation of the imu measurement period
   double timeDiff = imuTime[imuPointerLast] - imuTime[imuPointerBack];
-  //要求imu的频率至少比lidar高，这样的imu信息才使用，后面校正也才有意义
-  if (timeDiff < scanPeriod) {//（隐含从静止开始运动）
-    //求每个imu时间点的位移与速度,两点之间视为匀加速直线运动
+  //The frequency of imu is required to be at least higher than that of lidar. Only such imu information is used, and subsequent correction is meaningful.
+  if (timeDiff < scanPeriod) {//(implies movement from rest)
+    //Find the displacement and velocity of each imu time point, between the two points as a uniform acceleration linear motion
     imuShiftX[imuPointerLast] = imuShiftX[imuPointerBack] + imuVeloX[imuPointerBack] * timeDiff 
                               + accX * timeDiff * timeDiff / 2;
     imuShiftY[imuPointerLast] = imuShiftY[imuPointerBack] + imuVeloY[imuPointerBack] * timeDiff 
@@ -274,10 +274,10 @@ void AccumulateIMUShift()
   }
 }
 
-//接收点云数据，velodyne雷达坐标系安装为x轴向前，y轴向左，z轴向上的右手坐标系
+//Receiving point cloud data, the velodyne radar coordinate system is installed as a right-handed coordinate system with the x-axis forward, the y-axis left, and the z-axis upward
 void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
 {
-  if (!systemInited) {//丢弃前20个点云数据
+  if (!systemInited) {//Discard the first 20 point cloud data
     systemInitCount++;
     if (systemInitCount >= systemDelay) {
       systemInited = true;
@@ -285,48 +285,48 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     return;
   }
 
-  //记录每个scan有曲率的点的开始和结束索引
+  //Record the start and end index of each scan point with curvature
   std::vector<int> scanStartInd(N_SCANS, 0);
   std::vector<int> scanEndInd(N_SCANS, 0);
   
-  //当前点云时间
+  //current point cloud time
   double timeScanCur = laserCloudMsg->header.stamp.toSec();
   pcl::PointCloud<pcl::PointXYZ> laserCloudIn;
-  //消息转换成pcl数据存放
+  //The message is converted into pcl data storage
   pcl::fromROSMsg(*laserCloudMsg, laserCloudIn);
   std::vector<int> indices;
-  //移除空点
+  //remove empty dots
   pcl::removeNaNFromPointCloud(laserCloudIn, laserCloudIn, indices);
-  //点云点的数量
+  //Number of point cloud points
   int cloudSize = laserCloudIn.points.size();
-  //lidar scan开始点的旋转角,atan2范围[-pi,+pi],计算旋转角时取负号是因为velodyne是顺时针旋转
+  //The rotation angle of the starting point of the lidar scan, the atan2 range is [-pi, +pi], the negative sign is taken when calculating the rotation angle because the velodyne rotates clockwise
   float startOri = -atan2(laserCloudIn.points[0].y, laserCloudIn.points[0].x);
-  //lidar scan结束点的旋转角，加2*pi使点云旋转周期为2*pi
+  //The rotation angle of the end point of lidar scan, add 2*pi to make the point cloud rotation period 2*pi
   float endOri = -atan2(laserCloudIn.points[cloudSize - 1].y,
                         laserCloudIn.points[cloudSize - 1].x) + 2 * M_PI;
 
-  //结束方位角与开始方位角差值控制在(PI,3*PI)范围，允许lidar不是一个圆周扫描
-  //正常情况下在这个范围内：pi < endOri - startOri < 3*pi，异常则修正
+  //The difference between the end azimuth and the start azimuth is controlled in the range of (PI, 3*PI), allowing lidar to not be a circular scan
+  //In this range under normal circumstances: pi < endOri -startOri < 3*pi, if it is abnormal, it will be corrected
   if (endOri - startOri > 3 * M_PI) {
     endOri -= 2 * M_PI;
   } else if (endOri - startOri < M_PI) {
     endOri += 2 * M_PI;
   }
-  //lidar扫描线是否旋转过半
+  //Whether the lidar scan line is rotated more than half
   bool halfPassed = false;
   int count = cloudSize;
   PointType point;
   std::vector<pcl::PointCloud<PointType> > laserCloudScans(N_SCANS);
   for (int i = 0; i < cloudSize; i++) {
-    //坐标轴交换，velodyne lidar的坐标系也转换到z轴向前，x轴向左的右手坐标系
+    //The coordinate axis is exchanged, and the coordinate system of the velodyne lidar is also converted to the right-hand coordinate system with the z-axis forward and the x-axis left.
     point.x = laserCloudIn.points[i].y;
     point.y = laserCloudIn.points[i].z;
     point.z = laserCloudIn.points[i].x;
 
-    //计算点的仰角(根据lidar文档垂直角计算公式),根据仰角排列激光线号，velodyne每两个scan之间间隔2度
+    //Calculate the elevation angle of the point (according to the vertical angle calculation formula of the lidar document), arrange the laser line numbers according to the elevation angle, and the interval between each two scans of velodyne is 2 degrees
     float angle = atan(point.y / sqrt(point.x * point.x + point.z * point.z)) * 180 / M_PI;
     int scanID;
-    //仰角四舍五入(加减0.5截断效果等于四舍五入)
+    //Elevation angle is rounded (adding or subtracting 0.5 truncation effect is equal to rounding)
     int roundedAngle = int(angle + (angle<0.0?-0.5:+0.5)); 
     if (roundedAngle > 0){
       scanID = roundedAngle;
@@ -334,16 +334,16 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     else {
       scanID = roundedAngle + (N_SCANS - 1);
     }
-    //过滤点，只挑选[-15度，+15度]范围内的点,scanID属于[0,15]
+    //Filter points, only select points in the range of [15 degrees, +15 degrees], scan id belongs to [0,15]
     if (scanID > (N_SCANS - 1) || scanID < 0 ){
       count--;
       continue;
     }
 
-    //该点的旋转角
+    //The rotation angle of the point
     float ori = -atan2(point.x, point.z);
-    if (!halfPassed) {//根据扫描线是否旋转过半选择与起始位置还是终止位置进行差值计算，从而进行补偿
-        //确保-pi/2 < ori - startOri < 3*pi/2
+    if (!halfPassed) {//According to whether the scan line is rotated more than half, select and calculate the difference between the start position or the end position, so as to compensate
+      //make sure -pi/2 < ori -startOri < 3*pi/2
       if (ori < startOri - M_PI / 2) {
         ori += 2 * M_PI;
       } else if (ori > startOri + M_PI * 3 / 2) {
@@ -356,7 +356,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     } else {
       ori += 2 * M_PI;
 
-      //确保-3*pi/2 < ori - endOri < pi/2
+      //Hoho-3 *pi /2 <ori --endOri <pi /2
       if (ori < endOri - M_PI * 3 / 2) {
         ori += 2 * M_PI;
       } else if (ori > endOri + M_PI / 2) {
@@ -364,15 +364,15 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
       } 
     }
 
-    //-0.5 < relTime < 1.5（点旋转的角度与整个周期旋转角度的比率, 即点云中点的相对时间）
+    //-0.5 < relTime < 1.5 (the ratio of the rotation angle of the point to the rotation angle of the whole cycle, that is, the relative time of the point in the point cloud)
     float relTime = (ori - startOri) / (endOri - startOri);
-    //点强度=线号+点相对时间（即一个整数+一个小数，整数部分是线号，小数部分是该点的相对时间）,匀速扫描：根据当前扫描的角度和扫描周期计算相对扫描起始位置的时间
+    //Point intensity = line number + point relative time (that is, an integer + a decimal, the integer part is the line number, and the decimal part is the relative time of the point), uniform scan: Calculate the relative scan start based on the current scan angle and scan cycle time at the starting position
     point.intensity = scanID + scanPeriod * relTime;
 
-    //点时间=点云时间+周期时间
-    if (imuPointerLast >= 0) {//如果收到IMU数据,使用IMU矫正点云畸变
-      float pointTime = relTime * scanPeriod;//计算点的周期时间
-      //寻找是否有点云的时间戳小于IMU的时间戳的IMU位置:imuPointerFront
+    //point time = point cloud time + cycle time
+    if (imuPointerLast >= 0) {//If imu data is received, use imu to correct point cloud distortion
+      float pointTime = relTime * scanPeriod;//Calculate the cycle time of the point
+      //Look for the IMU position where the timestamp of the point cloud is less than the timestamp of the IMU: imuPointerFront
       while (imuPointerFront != imuPointerLast) {
         if (timeScanCur + pointTime < imuTime[imuPointerFront]) {
           break;
@@ -380,7 +380,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
         imuPointerFront = (imuPointerFront + 1) % imuQueLength;
       }
 
-      if (timeScanCur + pointTime > imuTime[imuPointerFront]) {//没找到,此时imuPointerFront==imtPointerLast,只能以当前收到的最新的IMU的速度，位移，欧拉角作为当前点的速度，位移，欧拉角使用
+      if (timeScanCur + pointTime > imuTime[imuPointerFront]) {//Not found, at this time imu pointer front==imt pointer last, only the speed, displacement and Euler angle of the latest imu received can only be used as the speed, displacement and Euler angle of the current point
         imuRollCur = imuRoll[imuPointerFront];
         imuPitchCur = imuPitch[imuPointerFront];
         imuYawCur = imuYaw[imuPointerFront];
@@ -392,9 +392,9 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
         imuShiftXCur = imuShiftX[imuPointerFront];
         imuShiftYCur = imuShiftY[imuPointerFront];
         imuShiftZCur = imuShiftZ[imuPointerFront];
-      } else {//找到了点云时间戳小于IMU时间戳的IMU位置,则该点必处于imuPointerBack和imuPointerFront之间，据此线性插值，计算点云点的速度，位移和欧拉角
+      } else {//If the imu position of the point cloud timestamp is less than the imu timestamp, the point must be between the imu pointer back and the imu pointer front. According to this linear interpolation, the speed, displacement and Euler angle of the point cloud point are calculated.
         int imuPointerBack = (imuPointerFront + imuQueLength - 1) % imuQueLength;
-        //按时间距离计算权重分配比率,也即线性插值
+        //Calculate the weight distribution ratio according to the time distance, that is, linear interpolation
         float ratioFront = (timeScanCur + pointTime - imuTime[imuPointerBack]) 
                          / (imuTime[imuPointerFront] - imuTime[imuPointerBack]);
         float ratioBack = (imuTime[imuPointerFront] - timeScanCur - pointTime) 
@@ -410,7 +410,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
           imuYawCur = imuYaw[imuPointerFront] * ratioFront + imuYaw[imuPointerBack] * ratioBack;
         }
 
-        //本质:imuVeloXCur = imuVeloX[imuPointerback] + (imuVelX[imuPointerFront]-imuVelX[imuPoniterBack])*ratioFront
+        //Essence: imuVeloXCur = imuVeloX[imuPointerback] + (imuVelX[imuPointerFront]-imuVelX[imuPoniterBack])*ratioFront
         imuVeloXCur = imuVeloX[imuPointerFront] * ratioFront + imuVeloX[imuPointerBack] * ratioBack;
         imuVeloYCur = imuVeloY[imuPointerFront] * ratioFront + imuVeloY[imuPointerBack] * ratioBack;
         imuVeloZCur = imuVeloZ[imuPointerFront] * ratioFront + imuVeloZ[imuPointerBack] * ratioBack;
@@ -420,7 +420,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
         imuShiftZCur = imuShiftZ[imuPointerFront] * ratioFront + imuShiftZ[imuPointerBack] * ratioBack;
       }
 
-      if (i == 0) {//如果是第一个点,记住点云起始位置的速度，位移，欧拉角
+      if (i == 0) {//If it is the first point, remember the velocity, displacement, Euler angle of the starting position of the point cloud
         imuRollStart = imuRollCur;
         imuPitchStart = imuPitchCur;
         imuYawStart = imuYawCur;
@@ -432,24 +432,24 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
         imuShiftXStart = imuShiftXCur;
         imuShiftYStart = imuShiftYCur;
         imuShiftZStart = imuShiftZCur;
-      } else {//计算之后每个点相对于第一个点的由于加减速非匀速运动产生的位移速度畸变，并对点云中的每个点位置信息重新补偿矫正
+      } else {//After calculating the displacement velocity distortion of each point relative to the first point due to non-uniform acceleration and deceleration motion, and re-compensating and correcting the position information of each point in the point cloud
         ShiftToStartIMU(pointTime);
         VeloToStartIMU();
         TransformToStartIMU(&point);
       }
     }
-    laserCloudScans[scanID].push_back(point);//将每个补偿矫正的点放入对应线号的容器
+    laserCloudScans[scanID].push_back(point);//Put each point of compensation correction into the container of the corresponding line number
   }
 
-  //获得有效范围内的点的数量
+  //Get the number of points in the valid range
   cloudSize = count;
 
   pcl::PointCloud<PointType>::Ptr laserCloud(new pcl::PointCloud<PointType>());
-  for (int i = 0; i < N_SCANS; i++) {//将所有的点按照线号从小到大放入一个容器
+  for (int i = 0; i < N_SCANS; i++) {//Put all the points into a container according to the line number from small to large
     *laserCloud += laserCloudScans[i];
   }
   int scanCount = -1;
-  for (int i = 5; i < cloudSize - 5; i++) {//使用每个点的前后五个点计算曲率，因此前五个与最后五个点跳过
+  for (int i = 5; i < cloudSize - 5; i++) {//The curvature is calculated using the five points before and after each point, so the first and last five points are skipped
     float diffX = laserCloud->points[i - 5].x + laserCloud->points[i - 4].x 
                 + laserCloud->points[i - 3].x + laserCloud->points[i - 2].x 
                 + laserCloud->points[i - 1].x - 10 * laserCloud->points[i].x 
@@ -468,59 +468,59 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
                 + laserCloud->points[i + 1].z + laserCloud->points[i + 2].z
                 + laserCloud->points[i + 3].z + laserCloud->points[i + 4].z
                 + laserCloud->points[i + 5].z;
-    //曲率计算
+    //curvature calculation
     cloudCurvature[i] = diffX * diffX + diffY * diffY + diffZ * diffZ;
-    //记录曲率点的索引
+    //record the index of the curvature point
     cloudSortInd[i] = i;
-    //初始时，点全未筛选过
+    //Initially, the points are not filtered
     cloudNeighborPicked[i] = 0;
-    //初始化为less flat点
+    //Initialize to less flat point
     cloudLabel[i] = 0;
 
-    //每个scan，只有第一个符合的点会进来，因为每个scan的点都在一起存放
+    //For each scan, only the first matching point will come in, because the points of each scan are stored together
     if (int(laserCloud->points[i].intensity) != scanCount) {
       scanCount = int(laserCloud->points[i].intensity);//控制每个scan只进入第一个点
 
-      //曲率只取同一个scan计算出来的，跨scan计算的曲率非法，排除，也即排除每个scan的前后五个点
+      //The curvature is only calculated by the same scan. The curvature calculated across scans is illegal. Exclude, that is, exclude the five points before and after each scan.
       if (scanCount > 0 && scanCount < N_SCANS) {
         scanStartInd[scanCount] = i + 5;
         scanEndInd[scanCount - 1] = i - 5;
       }
     }
   }
-  //第一个scan曲率点有效点序从第5个开始，最后一个激光线结束点序size-5
+  //The valid point sequence of the first scan curvature point starts from the 5th, and the end point sequence of the last laser line is size 5
   scanStartInd[0] = 5;
   scanEndInd.back() = cloudSize - 5;
 
-  //挑选点，排除容易被斜面挡住的点以及离群点，有些点容易被斜面挡住，而离群点可能出现带有偶然性，这些情况都可能导致前后两次扫描不能被同时看到
+  //Select points to exclude the points that are easily blocked by the inclined plane and outliers. Some points are easy to be blocked by the inclined plane, and the outliers may appear by chance, which may cause the two scans before and after the scan to not be seen at the same time.
   for (int i = 5; i < cloudSize - 6; i++) {//与后一个点差值，所以减6
     float diffX = laserCloud->points[i + 1].x - laserCloud->points[i].x;
     float diffY = laserCloud->points[i + 1].y - laserCloud->points[i].y;
     float diffZ = laserCloud->points[i + 1].z - laserCloud->points[i].z;
-    //计算有效曲率点与后一个点之间的距离平方和
+    //Calculate the sum of squared distances between the effective curvature point and the next point
     float diff = diffX * diffX + diffY * diffY + diffZ * diffZ;
 
-    if (diff > 0.1) {//前提:两个点之间距离要大于0.1
+    if (diff > 0.1) {//Premise: The distance between two points should be greater than 0.1
 
-        //点的深度
+      //point depth
       float depth1 = sqrt(laserCloud->points[i].x * laserCloud->points[i].x + 
                      laserCloud->points[i].y * laserCloud->points[i].y +
                      laserCloud->points[i].z * laserCloud->points[i].z);
 
-      //后一个点的深度
+      //the depth of the next point
       float depth2 = sqrt(laserCloud->points[i + 1].x * laserCloud->points[i + 1].x + 
                      laserCloud->points[i + 1].y * laserCloud->points[i + 1].y +
                      laserCloud->points[i + 1].z * laserCloud->points[i + 1].z);
 
-      //按照两点的深度的比例，将深度较大的点拉回后计算距离
+      //According to the ratio of the depth of the two points, the distance is calculated after pulling the point with a larger depth back
       if (depth1 > depth2) {
         diffX = laserCloud->points[i + 1].x - laserCloud->points[i].x * depth2 / depth1;
         diffY = laserCloud->points[i + 1].y - laserCloud->points[i].y * depth2 / depth1;
         diffZ = laserCloud->points[i + 1].z - laserCloud->points[i].z * depth2 / depth1;
 
-        //边长比也即是弧度值，若小于0.1，说明夹角比较小，斜面比较陡峭,点深度变化比较剧烈,点处在近似与激光束平行的斜面上
-        if (sqrt(diffX * diffX + diffY * diffY + diffZ * diffZ) / depth2 < 0.1) {//排除容易被斜面挡住的点
-            //该点及前面五个点（大致都在斜面上）全部置为筛选过
+        //The side length ratio is also the radian value. If it is less than 0.1, it means that the angle is relatively small, the slope is relatively steep, and the point depth changes sharply. The point is on the slope that is approximately parallel to the laser beam.
+        if (sqrt(diffX * diffX + diffY * diffY + diffZ * diffZ) / depth2 < 0.1) {//Exclude points that are easily blocked by slopes
+          //This point and the previous five points (roughly on the slope) are all set as filtered
           cloudNeighborPicked[i - 5] = 1;
           cloudNeighborPicked[i - 4] = 1;
           cloudNeighborPicked[i - 3] = 1;
@@ -547,15 +547,15 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     float diffX2 = laserCloud->points[i].x - laserCloud->points[i - 1].x;
     float diffY2 = laserCloud->points[i].y - laserCloud->points[i - 1].y;
     float diffZ2 = laserCloud->points[i].z - laserCloud->points[i - 1].z;
-    //与前一个点的距离平方和
+    //sum of squared distances from the previous point
     float diff2 = diffX2 * diffX2 + diffY2 * diffY2 + diffZ2 * diffZ2;
 
-    //点深度的平方和
+    //sum of squares of point depths
     float dis = laserCloud->points[i].x * laserCloud->points[i].x
               + laserCloud->points[i].y * laserCloud->points[i].y
               + laserCloud->points[i].z * laserCloud->points[i].z;
 
-    //与前后点的平方和都大于深度平方和的万分之二，这些点视为离群点，包括陡斜面上的点，强烈凸凹点和空旷区域中的某些点，置为筛选过，弃用
+    //The sum of squares with the front and rear points is greater than 2/10,000 of the sum of the squares of the depth. These points are regarded as outliers, including points on steep slopes, strong convex and concave points and some points in open areas, which are set as filtered , deprecated
     if (diff > 0.0002 * dis && diff2 > 0.0002 * dis) {
       cloudNeighborPicked[i] = 1;
     }
@@ -567,20 +567,20 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   pcl::PointCloud<PointType> surfPointsFlat;
   pcl::PointCloud<PointType> surfPointsLessFlat;
 
-  //将每条线上的点分入相应的类别：边沿点和平面点
+  //Divide the points on each line into the corresponding categories: edge points and plane points
   for (int i = 0; i < N_SCANS; i++) {
     pcl::PointCloud<PointType>::Ptr surfPointsLessFlatScan(new pcl::PointCloud<PointType>);
-    //将每个scan的曲率点分成6等份处理,确保周围都有点被选作特征点
+    //Divide the curvature points of each scan into 6 equal parts to ensure that all surrounding points are selected as feature points
     for (int j = 0; j < 6; j++) {
-        //六等份起点：sp = scanStartInd + (scanEndInd - scanStartInd)*j/6
+      //Six equal starting points: sp = scanStartInd + (scanEndInd -scanStartInd)*j/6
       int sp = (scanStartInd[i] * (6 - j)  + scanEndInd[i] * j) / 6;
-      //六等份终点：ep = scanStartInd - 1 + (scanEndInd - scanStartInd)*(j+1)/6
+      //Six equal end points: ep = scanStartInd -1 + (scanEndInd -scanStartInd)*(j+1)/6
       int ep = (scanStartInd[i] * (5 - j)  + scanEndInd[i] * (j + 1)) / 6 - 1;
 
-      //按曲率从小到大冒泡排序
+      //sort by curvature from small to large
       for (int k = sp + 1; k <= ep; k++) {
         for (int l = k; l >= sp + 1; l--) {
-            //如果后面曲率点大于前面，则交换
+          //If the back curvature point is greater than the front, then swap
           if (cloudCurvature[cloudSortInd[l]] < cloudCurvature[cloudSortInd[l - 1]]) {
             int temp = cloudSortInd[l - 1];
             cloudSortInd[l - 1] = cloudSortInd[l];
@@ -589,30 +589,30 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
         }
       }
 
-      //挑选每个分段的曲率很大和比较大的点
+      //pick points with large and relatively large curvature of each segment
       int largestPickedNum = 0;
       for (int k = ep; k >= sp; k--) {
-        int ind = cloudSortInd[k];  //曲率最大点的点序
+        int ind = cloudSortInd[k];//The point sequence of the maximum curvature point
 
-        //如果曲率大的点，曲率的确比较大，并且未被筛选过滤掉
+        //If the curvature is large, the curvature is indeed large, and it is not filtered out
         if (cloudNeighborPicked[ind] == 0 &&
             cloudCurvature[ind] > 0.1) {
         
           largestPickedNum++;
-          if (largestPickedNum <= 2) {//挑选曲率最大的前2个点放入sharp点集合
-            cloudLabel[ind] = 2;//2代表点曲率很大
+          if (largestPickedNum <= 2) {//Pick the top 2 points with the largest curvature and put them into the sharp point set
+            cloudLabel[ind] = 2;//2 means the point has a large curvature
             cornerPointsSharp.push_back(laserCloud->points[ind]);
             cornerPointsLessSharp.push_back(laserCloud->points[ind]);
-          } else if (largestPickedNum <= 20) {//挑选曲率最大的前20个点放入less sharp点集合
-            cloudLabel[ind] = 1;//1代表点曲率比较尖锐
+          } else if (largestPickedNum <= 20) {//Pick the top 20 points with the largest curvature and put them into the less sharp point set
+            cloudLabel[ind] = 1;//1 means the point curvature is relatively sharp
             cornerPointsLessSharp.push_back(laserCloud->points[ind]);
           } else {
             break;
           }
 
-          cloudNeighborPicked[ind] = 1;//筛选标志置位
+          cloudNeighborPicked[ind] = 1;//filter flag set
 
-          //将曲率比较大的点的前后各5个连续距离比较近的点筛选出去，防止特征点聚集，使得特征点在每个方向上尽量分布均匀
+          //Filter out 5 consecutive points with relatively close distances before and after the point with relatively large curvature to prevent the feature points from gathering, so that the feature points are distributed as evenly as possible in each direction
           for (int l = 1; l <= 5; l++) {
             float diffX = laserCloud->points[ind + l].x 
                         - laserCloud->points[ind + l - 1].x;
@@ -642,25 +642,25 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
         }
       }
 
-      //挑选每个分段的曲率很小比较小的点
+      //Select points with small curvature for each segment
       int smallestPickedNum = 0;
       for (int k = sp; k <= ep; k++) {
         int ind = cloudSortInd[k];
 
-        //如果曲率的确比较小，并且未被筛选出
+        //If the curvature is indeed small and not filtered out
         if (cloudNeighborPicked[ind] == 0 &&
             cloudCurvature[ind] < 0.1) {
 
-          cloudLabel[ind] = -1;//-1代表曲率很小的点
+          cloudLabel[ind] = -1;//1 represents a point with little curvature
           surfPointsFlat.push_back(laserCloud->points[ind]);
 
           smallestPickedNum++;
-          if (smallestPickedNum >= 4) {//只选最小的四个，剩下的Label==0,就都是曲率比较小的
+          if (smallestPickedNum >= 4) {//Only the smallest four are selected, and the remaining label==0, they are all with relatively small curvature
             break;
           }
 
           cloudNeighborPicked[ind] = 1;
-          for (int l = 1; l <= 5; l++) {//同样防止特征点聚集
+          for (int l = 1; l <= 5; l++) {//Also prevent feature points from gathering
             float diffX = laserCloud->points[ind + l].x 
                         - laserCloud->points[ind + l - 1].x;
             float diffY = laserCloud->points[ind + l].y 
@@ -689,7 +689,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
         }
       }
 
-      //将剩余的点（包括之前被排除的点）全部归入平面点中less flat类别中
+      //The remaining points (including the previously excluded points) are all classified into the less flat category of plane points
       for (int k = sp; k <= ep; k++) {
         if (cloudLabel[k] <= 0) {
           surfPointsLessFlatScan->push_back(laserCloud->points[k]);
@@ -697,25 +697,25 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
       }
     }
 
-    //由于less flat点最多，对每个分段less flat的点进行体素栅格滤波
+    //Since the less flat points are the most, perform voxel grid filtering on each segmented less flat point
     pcl::PointCloud<PointType> surfPointsLessFlatScanDS;
     pcl::VoxelGrid<PointType> downSizeFilter;
     downSizeFilter.setInputCloud(surfPointsLessFlatScan);
     downSizeFilter.setLeafSize(0.2, 0.2, 0.2);
     downSizeFilter.filter(surfPointsLessFlatScanDS);
 
-    //less flat点汇总
+    //less flat point summary
     surfPointsLessFlat += surfPointsLessFlatScanDS;
   }
 
-  //publich消除非匀速运动畸变后的所有的点
+  //public eliminates all points after non-uniform motion distortion
   sensor_msgs::PointCloud2 laserCloudOutMsg;
   pcl::toROSMsg(*laserCloud, laserCloudOutMsg);
   laserCloudOutMsg.header.stamp = laserCloudMsg->header.stamp;
   laserCloudOutMsg.header.frame_id = "/camera";
   pubLaserCloud.publish(laserCloudOutMsg);
 
-  //publich消除非匀速运动畸变后的平面点和边沿点
+  //public plane point and edge point after eliminating non-uniform motion distortion
   sensor_msgs::PointCloud2 cornerPointsSharpMsg;
   pcl::toROSMsg(cornerPointsSharp, cornerPointsSharpMsg);
   cornerPointsSharpMsg.header.stamp = laserCloudMsg->header.stamp;
@@ -740,19 +740,19 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   surfPointsLessFlat2.header.frame_id = "/camera";
   pubSurfPointsLessFlat.publish(surfPointsLessFlat2);
 
-  //publich IMU消息,由于循环到了最后，因此是Cur都是代表最后一个点，即最后一个点的欧拉角，畸变位移及一个点云周期增加的速度
+  //publish IMU message, because the cycle is at the end, so Cur is the last point, that is, the Euler angle of the last point, the distortion displacement and the speed of a point cloud period increase
   pcl::PointCloud<pcl::PointXYZ> imuTrans(4, 1);
-  //起始点欧拉角
+  //Start point Euler angle
   imuTrans.points[0].x = imuPitchStart;
   imuTrans.points[0].y = imuYawStart;
   imuTrans.points[0].z = imuRollStart;
 
-  //最后一个点的欧拉角
+  //Euler angles of the last point
   imuTrans.points[1].x = imuPitchCur;
   imuTrans.points[1].y = imuYawCur;
   imuTrans.points[1].z = imuRollCur;
 
-  //最后一个点相对于第一个点的畸变位移和速度
+  //Distortion displacement and velocity of the last point relative to the first point
   imuTrans.points[2].x = imuShiftFromStartXCur;
   imuTrans.points[2].y = imuShiftFromStartYCur;
   imuTrans.points[2].z = imuShiftFromStartZCur;
@@ -768,7 +768,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   pubImuTrans.publish(imuTransMsg);
 }
 
-//接收imu消息，imu坐标系为x轴向前，y轴向右，z轴向上的右手坐标系
+//Receive the imu message, the imu coordinate system is the right-handed coordinate system of the x-axis forward, the y-axis to the right, and the z-axis upward
 void imuHandler(const sensor_msgs::Imu::ConstPtr& imuIn)
 {
   double roll, pitch, yaw;
@@ -779,12 +779,12 @@ void imuHandler(const sensor_msgs::Imu::ConstPtr& imuIn)
   //Here roll pitch yaw is in the global frame
   tf::Matrix3x3(orientation).getRPY(roll, pitch, yaw);
 
-  //减去重力的影响,求出xyz方向的加速度实际值，并进行坐标轴交换，统一到z轴向前,x轴向左的右手坐标系, 交换过后RPY对应fixed axes ZXY(RPY---ZXY)。Now R = Ry(yaw)*Rx(pitch)*Rz(roll).
+  //Subtract the influence of gravity, find the actual value of the acceleration in the xyz direction, and exchange the coordinate axes, unify them to the right-hand coordinate system with the z-axis forward and the x-axis left. After the exchange, RPY corresponds to the fixed axes ZXY(RPY---ZXY). Now R = Ry(yaw)*Rx(pitch)*Rz(roll).
   float accX = imuIn->linear_acceleration.y - sin(roll) * cos(pitch) * 9.81;
   float accY = imuIn->linear_acceleration.z - cos(roll) * cos(pitch) * 9.81;
   float accZ = imuIn->linear_acceleration.x + sin(pitch) * 9.81;
 
-  //循环移位效果，形成环形数组
+  //Circular shift effect to form a circular array
   imuPointerLast = (imuPointerLast + 1) % imuQueLength;
 
   imuTime[imuPointerLast] = imuIn->header.stamp.toSec();
