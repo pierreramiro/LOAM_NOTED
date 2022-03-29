@@ -79,7 +79,8 @@ float cloudCurvature[40000];
 int cloudSortInd[40000];
 //Whether the point is filtered flag: 0 unfiltered, 1 filtered
 int cloudNeighborPicked[40000];
-//Point classification label: 2 represents a large curvature, 1 represents a relatively large curvature, 1 represents a small curvature, and 0 represents a relatively small curvature (where 1 contains 2, 0 contains 1, 0 and 1 constitute all the points of the point cloud )
+//Point classification label: 2 represents a large curvature, 1 represents a relatively large curvature, 1 represents a small curvature, 
+//and 0 represents a relatively small curvature (where 1 contains 2, 0 contains 1, 0 and 1 constitute all the points of the point cloud )
 int cloudLabel[40000];
 
 //Where the Imu timestamp is greater than the current point cloud timestamp
@@ -323,6 +324,9 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   int count = cloudSize;
   PointType point;
   std::vector<pcl::PointCloud<PointType> > laserCloudScans(N_SCANS);
+  /**********************************************************************************************************/
+  //Me parece que este For lo hacen para ordenar la nube a un sistema XYZ y los coloca el orden segun el BEAM
+  /**********************************************************************************************************/ 
   for (int i = 0; i < cloudSize; i++) {
     //The coordinate axis is exchanged, and the coordinate system of the velodyne lidar is also converted 
     //to the right-hand coordinate system with the z-axis forward and the x-axis left.
@@ -366,7 +370,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     } else {
       ori += 2 * M_PI;
 
-      //Hoho-3 *pi /2 <ori --endOri <pi /2
+      //-3 *pi /2 <ori -endOri <pi /2
       if (ori < endOri - M_PI * 3 / 2) {
         ori += 2 * M_PI;
       } else if (ori > endOri + M_PI / 2) {
@@ -374,7 +378,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
       } 
     }
 
-    //-0.5 < relTime < 1.5 (the ratio of the rotation angle of the point to the rotation angle of the whole cycle, 
+    //-1/2 < relTime < 3/2 (the ratio of the rotation angle of the point to the rotation angle of the whole cycle, 
     //that is, the relative time of the point in the point cloud)
     float relTime = (ori - startOri) / (endOri - startOri);
     //Point intensity = line number + point relative time (that is, an integer + a decimal, the integer part is 
@@ -468,6 +472,11 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     *laserCloud += laserCloudScans[i];
   }
   int scanCount = -1;
+  /**********************************************************************************************************/
+  //En este For para cada punto realizan la formula de la curvatura, pero solo para los puntos de un mismo BEAM
+  //Tambien, crea unas variables adicionales como Sort, Label, Neighborpicked... Ya veremos de que trata..
+  //Los valores de curvatura los guardan en el vector CloudCurvature
+  /**********************************************************************************************************/
   for (int i = 5; i < cloudSize - 5; i++) {//The curvature is calculated using the five points before and after each point, so the first and last 
                                            //five points are skipped
     float diffX = laserCloud->points[i - 5].x + laserCloud->points[i - 4].x 
@@ -499,7 +508,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
 
     //For each scan, only the first matching point will come in, because the points of each scan are stored together
     if (int(laserCloud->points[i].intensity) != scanCount) {
-      scanCount = int(laserCloud->points[i].intensity);//控制每个scan只进入第一个点
+      scanCount = int(laserCloud->points[i].intensity);//Control each scan to only enter the first point
 
       //The curvature is only calculated by the same scan. The curvature calculated across scans is illegal. Exclude, that is, exclude the five 
       //points before and after each scan.
@@ -513,9 +522,12 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   scanStartInd[0] = 5;
   scanEndInd.back() = cloudSize - 5;
 
+  /**********************************************************************************************************/
+  //Hacen el cálculo de los puntos que son conflictivos (Sit1,Sit2,Sit3) y los guardan en NeighborPicked
+  /**********************************************************************************************************/
   //Select points to exclude the points that are easily blocked by the inclined plane and outliers. Some points are easy to be blocked by the 
   //inclined plane, and the outliers may appear by chance, which may cause the two scans before and after the scan to not be seen at the same time.
-  for (int i = 5; i < cloudSize - 6; i++) {//与后一个点差值，所以减6
+  for (int i = 5; i < cloudSize - 6; i++) {//and the latter pip value, so subtract 6
     float diffX = laserCloud->points[i + 1].x - laserCloud->points[i].x;
     float diffY = laserCloud->points[i + 1].y - laserCloud->points[i].y;
     float diffZ = laserCloud->points[i + 1].z - laserCloud->points[i].z;
@@ -592,9 +604,17 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   pcl::PointCloud<PointType> surfPointsFlat;
   pcl::PointCloud<PointType> surfPointsLessFlat;
 
+  /**********************************************************************************************************/
+  //Para rayos de una misa fila SCAN/BEAM se realiza la subdivisión de regiones. Además, se ordena la nube con 
+  //base al valor de su curvatura de menor a mayor
+  /**********************************************************************************************************/
   //Divide the points on each line into the corresponding categories: edge points and plane points
-  for (int i = 0; i < N_SCANS; i++) {
+  for (int i = 0; i < N_SCANS; i++){
     pcl::PointCloud<PointType>::Ptr surfPointsLessFlatScan(new pcl::PointCloud<PointType>);
+    
+    /**********************************************************************************************************/
+    //Para cada sector, analizamos si el punto será borde o plano o estará en la categoria de los sobrantes
+    /**********************************************************************************************************/
     //Divide the curvature points of each scan into 6 equal parts to ensure that all surrounding points are selected as feature points
     for (int j = 0; j < 6; j++) {
       //Six equal starting points: sp = scanStartInd + (scanEndInd -scanStartInd)*j/6
@@ -613,7 +633,12 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
           }
         }
       }
-
+      /********************************************************************************************************/
+      //Para cada punto de cada region se le analiza si es borde o no. ADemás se le clasifica en E1 o E2. 
+      //Adicional, para evitar que los puntos caracteristícos se junten, por cada punto guardado se le analiza
+      //sus vencidarios y se filtran como conflictivos, solo para evitar tener muchos FEaturesPoints en un único 
+      //lugar.
+      /********************************************************************************************************/
       //pick points with large and relatively large curvature of each segment
       int largestPickedNum = 0;
       for (int k = ep; k >= sp; k--) {
@@ -621,7 +646,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
 
         //If the curvature is large, the curvature is indeed large, and it is not filtered out
         if (cloudNeighborPicked[ind] == 0 &&
-            cloudCurvature[ind] > 0.1) {
+            cloudCurvature[ind] > 0.1) {//!!!Esta es la condición del diagrama de flujo "EdgePointsDetection"
         
           largestPickedNum++;
           if (largestPickedNum <= 2) {//Pick the top 2 points with the largest curvature and put them into the sharp point set
@@ -632,11 +657,11 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
             cloudLabel[ind] = 1;//1 means the point curvature is relatively sharp
             cornerPointsLessSharp.push_back(laserCloud->points[ind]);
           } else {
-            break;
+            break;//Ya superamos los umbrales. No debemos guardar más puntos
           }
 
           cloudNeighborPicked[ind] = 1;//filter flag set
-
+          //Prestar atencion a lo de abajo!!
           //Filter out 5 consecutive points with relatively close distances before and after the point with relatively large curvature to prevent 
           //the feature points from gathering, so that the feature points are distributed as evenly as possible in each direction
           for (int l = 1; l <= 5; l++) {
@@ -668,6 +693,9 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
         }
       }
 
+      /********************************************************************************************************/
+      //Similar que el anterior, hacemos el proceso de PlanarPointsDetection
+      /********************************************************************************************************/
       //Select points with small curvature for each segment
       int smallestPickedNum = 0;
       for (int k = sp; k <= ep; k++) {
@@ -717,12 +745,13 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
 
       //The remaining points (including the previously excluded points) are all classified into the less flat category of plane points
       for (int k = sp; k <= ep; k++) {
-        if (cloudLabel[k] <= 0) {
+        if (cloudLabel[k] <= 0) {//Los valores de cloudLabel son -1,0,1,2
           surfPointsLessFlatScan->push_back(laserCloud->points[k]);
         }
       }
     }
 
+    //Interesante lo que hacen, para reducir el tiempo de procesamiento, hacen un downsampling de los puntos
     //Since the less flat points are the most, perform voxel grid filtering on each segmented less flat point
     pcl::PointCloud<PointType> surfPointsLessFlatScanDS;
     pcl::VoxelGrid<PointType> downSizeFilter;
