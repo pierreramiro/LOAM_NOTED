@@ -32,7 +32,7 @@
 
 
 
-/******************************读前须知*****************************************/
+/*****************************Before You Read********************************************/
 /*imu is a right-handed coordinate system with the x-axis forward, the y-axis left, and the z-axis upward,
 The velodyne lidar is mounted as a right-handed coordinate system with the x-axis forward, the y-axis left, and the z-axis up,
 scanRegistration will unify the two to the right-handed coordinate system with the z-axis forward, the x-axis left, and the y-axis up
@@ -129,10 +129,12 @@ ros::Publisher pubSurfPointsFlat;
 ros::Publisher pubSurfPointsLessFlat;
 ros::Publisher pubImuTrans;
 
-//Calculate the displacement distortion caused by the acceleration and deceleration of the point in the point cloud relative to the first starting point in the local coordinate system
+//Calculate the displacement distortion caused by the acceleration and deceleration of the point 
+//in the point cloud relative to the first starting point in the local coordinate system
 void ShiftToStartIMU(float pointTime)
 {
-  //Calculate the distortion displacement due to acceleration and deceleration relative to the first point (distortion displacement delta_Tg in the global coordinate system)
+  //Calculate the distortion displacement due to acceleration and deceleration relative to the first 
+  //point (distortion displacement delta_Tg in the global coordinate system)
   //imuShiftFromStartCur = imuShiftCur -(imuShiftStart + imuVeloStart *pointTime)
   imuShiftFromStartXCur = imuShiftXCur - imuShiftXStart - imuVeloXStart * pointTime;
   imuShiftFromStartYCur = imuShiftYCur - imuShiftYStart - imuVeloYStart * pointTime;
@@ -159,7 +161,8 @@ void ShiftToStartIMU(float pointTime)
   imuShiftFromStartZCur = z2;
 }
 
-//Calculate the velocity distortion (increment) of the point in the point cloud relative to the first starting point due to acceleration and deceleration in the local coordinate system
+//Calculate the velocity distortion (increment) of the point in the point cloud relative to the 
+//first starting point due to acceleration and deceleration in the local coordinate system
 void VeloToStartIMU()
 {
   //Calculate the distortion speed due to acceleration and deceleration relative to the first point (distortion speed increment delta vg in the global coordinate system)
@@ -274,7 +277,8 @@ void AccumulateIMUShift()
   }
 }
 
-//Receiving point cloud data, the velodyne radar coordinate system is installed as a right-handed coordinate system with the x-axis forward, the y-axis left, and the z-axis upward
+//Receiving point cloud data, the velodyne radar coordinate system is installed as a right-handed 
+//coordinate system with the x-axis forward, the y-axis left, and the z-axis upward
 void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
 {
   if (!systemInited) {//Discard the first 20 point cloud data
@@ -299,13 +303,15 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   pcl::removeNaNFromPointCloud(laserCloudIn, laserCloudIn, indices);
   //Number of point cloud points
   int cloudSize = laserCloudIn.points.size();
-  //The rotation angle of the starting point of the lidar scan, the atan2 range is [-pi, +pi], the negative sign is taken when calculating the rotation angle because the velodyne rotates clockwise
+  //The rotation angle of the starting point of the lidar scan, the atan2 range is [-pi, +pi], the 
+  //negative sign is taken when calculating the rotation angle because the velodyne rotates clockwise
   float startOri = -atan2(laserCloudIn.points[0].y, laserCloudIn.points[0].x);
   //The rotation angle of the end point of lidar scan, add 2*pi to make the point cloud rotation period 2*pi
   float endOri = -atan2(laserCloudIn.points[cloudSize - 1].y,
                         laserCloudIn.points[cloudSize - 1].x) + 2 * M_PI;
 
-  //The difference between the end azimuth and the start azimuth is controlled in the range of (PI, 3*PI), allowing lidar to not be a circular scan
+  //The difference between the end azimuth and the start azimuth is controlled in the range of (PI, 3*PI), 
+  //allowing lidar to not be a circular scan
   //In this range under normal circumstances: pi < endOri -startOri < 3*pi, if it is abnormal, it will be corrected
   if (endOri - startOri > 3 * M_PI) {
     endOri -= 2 * M_PI;
@@ -318,12 +324,15 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   PointType point;
   std::vector<pcl::PointCloud<PointType> > laserCloudScans(N_SCANS);
   for (int i = 0; i < cloudSize; i++) {
-    //The coordinate axis is exchanged, and the coordinate system of the velodyne lidar is also converted to the right-hand coordinate system with the z-axis forward and the x-axis left.
+    //The coordinate axis is exchanged, and the coordinate system of the velodyne lidar is also converted 
+    //to the right-hand coordinate system with the z-axis forward and the x-axis left.
     point.x = laserCloudIn.points[i].y;
     point.y = laserCloudIn.points[i].z;
     point.z = laserCloudIn.points[i].x;
 
-    //Calculate the elevation angle of the point (according to the vertical angle calculation formula of the lidar document), arrange the laser line numbers according to the elevation angle, and the interval between each two scans of velodyne is 2 degrees
+    //Calculate the elevation angle of the point (according to the vertical angle calculation formula of 
+    //the lidar document), arrange the laser line numbers according to the elevation angle, and the interval
+    //between each two scans of velodyne is 2 degrees
     float angle = atan(point.y / sqrt(point.x * point.x + point.z * point.z)) * 180 / M_PI;
     int scanID;
     //Elevation angle is rounded (adding or subtracting 0.5 truncation effect is equal to rounding)
@@ -342,7 +351,8 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
 
     //The rotation angle of the point
     float ori = -atan2(point.x, point.z);
-    if (!halfPassed) {//According to whether the scan line is rotated more than half, select and calculate the difference between the start position or the end position, so as to compensate
+    if (!halfPassed) {//According to whether the scan line is rotated more than half, select and calculate the 
+                      //difference between the start position or the end position, so as to compensate
       //make sure -pi/2 < ori -startOri < 3*pi/2
       if (ori < startOri - M_PI / 2) {
         ori += 2 * M_PI;
@@ -364,9 +374,12 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
       } 
     }
 
-    //-0.5 < relTime < 1.5 (the ratio of the rotation angle of the point to the rotation angle of the whole cycle, that is, the relative time of the point in the point cloud)
+    //-0.5 < relTime < 1.5 (the ratio of the rotation angle of the point to the rotation angle of the whole cycle, 
+    //that is, the relative time of the point in the point cloud)
     float relTime = (ori - startOri) / (endOri - startOri);
-    //Point intensity = line number + point relative time (that is, an integer + a decimal, the integer part is the line number, and the decimal part is the relative time of the point), uniform scan: Calculate the relative scan start based on the current scan angle and scan cycle time at the starting position
+    //Point intensity = line number + point relative time (that is, an integer + a decimal, the integer part is 
+    //the line number, and the decimal part is the relative time of the point), uniform scan: Calculate the relative 
+    //scan start based on the current scan angle and scan cycle time at the starting position
     point.intensity = scanID + scanPeriod * relTime;
 
     //point time = point cloud time + cycle time
@@ -380,7 +393,10 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
         imuPointerFront = (imuPointerFront + 1) % imuQueLength;
       }
 
-      if (timeScanCur + pointTime > imuTime[imuPointerFront]) {//Not found, at this time imu pointer front==imt pointer last, only the speed, displacement and Euler angle of the latest imu received can only be used as the speed, displacement and Euler angle of the current point
+      if (timeScanCur + pointTime > imuTime[imuPointerFront]) {//Not found, at this time imu pointer front==imt pointer last, 
+                                                               //only the speed, displacement and Euler angle of the latest imu 
+                                                               //received can only be used as the speed, displacement and Euler 
+                                                               //angle of the current point
         imuRollCur = imuRoll[imuPointerFront];
         imuPitchCur = imuPitch[imuPointerFront];
         imuYawCur = imuYaw[imuPointerFront];
@@ -392,7 +408,9 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
         imuShiftXCur = imuShiftX[imuPointerFront];
         imuShiftYCur = imuShiftY[imuPointerFront];
         imuShiftZCur = imuShiftZ[imuPointerFront];
-      } else {//If the imu position of the point cloud timestamp is less than the imu timestamp, the point must be between the imu pointer back and the imu pointer front. According to this linear interpolation, the speed, displacement and Euler angle of the point cloud point are calculated.
+      } else {//If the imu position of the point cloud timestamp is less than the imu timestamp, the point must be between the imu 
+              //pointer back and the imu pointer front. According to this linear interpolation, the speed, displacement and Euler 
+              //angle of the point cloud point are calculated.
         int imuPointerBack = (imuPointerFront + imuQueLength - 1) % imuQueLength;
         //Calculate the weight distribution ratio according to the time distance, that is, linear interpolation
         float ratioFront = (timeScanCur + pointTime - imuTime[imuPointerBack]) 
@@ -432,7 +450,8 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
         imuShiftXStart = imuShiftXCur;
         imuShiftYStart = imuShiftYCur;
         imuShiftZStart = imuShiftZCur;
-      } else {//After calculating the displacement velocity distortion of each point relative to the first point due to non-uniform acceleration and deceleration motion, and re-compensating and correcting the position information of each point in the point cloud
+      } else {//After calculating the displacement velocity distortion of each point relative to the first point due to non-uniform acceleration 
+              //and deceleration motion, and re-compensating and correcting the position information of each point in the point cloud
         ShiftToStartIMU(pointTime);
         VeloToStartIMU();
         TransformToStartIMU(&point);
@@ -449,7 +468,8 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     *laserCloud += laserCloudScans[i];
   }
   int scanCount = -1;
-  for (int i = 5; i < cloudSize - 5; i++) {//The curvature is calculated using the five points before and after each point, so the first and last five points are skipped
+  for (int i = 5; i < cloudSize - 5; i++) {//The curvature is calculated using the five points before and after each point, so the first and last 
+                                           //five points are skipped
     float diffX = laserCloud->points[i - 5].x + laserCloud->points[i - 4].x 
                 + laserCloud->points[i - 3].x + laserCloud->points[i - 2].x 
                 + laserCloud->points[i - 1].x - 10 * laserCloud->points[i].x 
@@ -481,7 +501,8 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     if (int(laserCloud->points[i].intensity) != scanCount) {
       scanCount = int(laserCloud->points[i].intensity);//控制每个scan只进入第一个点
 
-      //The curvature is only calculated by the same scan. The curvature calculated across scans is illegal. Exclude, that is, exclude the five points before and after each scan.
+      //The curvature is only calculated by the same scan. The curvature calculated across scans is illegal. Exclude, that is, exclude the five 
+      //points before and after each scan.
       if (scanCount > 0 && scanCount < N_SCANS) {
         scanStartInd[scanCount] = i + 5;
         scanEndInd[scanCount - 1] = i - 5;
@@ -492,7 +513,8 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   scanStartInd[0] = 5;
   scanEndInd.back() = cloudSize - 5;
 
-  //Select points to exclude the points that are easily blocked by the inclined plane and outliers. Some points are easy to be blocked by the inclined plane, and the outliers may appear by chance, which may cause the two scans before and after the scan to not be seen at the same time.
+  //Select points to exclude the points that are easily blocked by the inclined plane and outliers. Some points are easy to be blocked by the 
+  //inclined plane, and the outliers may appear by chance, which may cause the two scans before and after the scan to not be seen at the same time.
   for (int i = 5; i < cloudSize - 6; i++) {//与后一个点差值，所以减6
     float diffX = laserCloud->points[i + 1].x - laserCloud->points[i].x;
     float diffY = laserCloud->points[i + 1].y - laserCloud->points[i].y;
@@ -518,7 +540,8 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
         diffY = laserCloud->points[i + 1].y - laserCloud->points[i].y * depth2 / depth1;
         diffZ = laserCloud->points[i + 1].z - laserCloud->points[i].z * depth2 / depth1;
 
-        //The side length ratio is also the radian value. If it is less than 0.1, it means that the angle is relatively small, the slope is relatively steep, and the point depth changes sharply. The point is on the slope that is approximately parallel to the laser beam.
+        //The side length ratio is also the radian value. If it is less than 0.1, it means that the angle is relatively small, the slope is relatively 
+        //steep, and the point depth changes sharply. The point is on the slope that is approximately parallel to the laser beam.
         if (sqrt(diffX * diffX + diffY * diffY + diffZ * diffZ) / depth2 < 0.1) {//Exclude points that are easily blocked by slopes
           //This point and the previous five points (roughly on the slope) are all set as filtered
           cloudNeighborPicked[i - 5] = 1;
@@ -555,7 +578,9 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
               + laserCloud->points[i].y * laserCloud->points[i].y
               + laserCloud->points[i].z * laserCloud->points[i].z;
 
-    //The sum of squares with the front and rear points is greater than 2/10,000 of the sum of the squares of the depth. These points are regarded as outliers, including points on steep slopes, strong convex and concave points and some points in open areas, which are set as filtered , deprecated
+    //The sum of squares with the front and rear points is greater than 2/10,000 of the sum of the squares of the depth. These points are 
+    //regarded as outliers, including points on steep slopes, strong convex and concave points and some points in open areas, which are set as 
+    //filtered , deprecated
     if (diff > 0.0002 * dis && diff2 > 0.0002 * dis) {
       cloudNeighborPicked[i] = 1;
     }
@@ -612,7 +637,8 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
 
           cloudNeighborPicked[ind] = 1;//filter flag set
 
-          //Filter out 5 consecutive points with relatively close distances before and after the point with relatively large curvature to prevent the feature points from gathering, so that the feature points are distributed as evenly as possible in each direction
+          //Filter out 5 consecutive points with relatively close distances before and after the point with relatively large curvature to prevent 
+          //the feature points from gathering, so that the feature points are distributed as evenly as possible in each direction
           for (int l = 1; l <= 5; l++) {
             float diffX = laserCloud->points[ind + l].x 
                         - laserCloud->points[ind + l - 1].x;
@@ -740,7 +766,8 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   surfPointsLessFlat2.header.frame_id = "/camera";
   pubSurfPointsLessFlat.publish(surfPointsLessFlat2);
 
-  //publish IMU message, because the cycle is at the end, so Cur is the last point, that is, the Euler angle of the last point, the distortion displacement and the speed of a point cloud period increase
+  //publish IMU message, because the cycle is at the end, so Cur is the last point, that is, the Euler angle of the last point, the distortion 
+  //displacement and the speed of a point cloud period increase
   pcl::PointCloud<pcl::PointXYZ> imuTrans(4, 1);
   //Start point Euler angle
   imuTrans.points[0].x = imuPitchStart;
@@ -768,7 +795,8 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   pubImuTrans.publish(imuTransMsg);
 }
 
-//Receive the imu message, the imu coordinate system is the right-handed coordinate system of the x-axis forward, the y-axis to the right, and the z-axis upward
+//Receive the imu message, the imu coordinate system is the right-handed coordinate system of the x-axis forward, the y-axis to the right, 
+//and the z-axis upward
 void imuHandler(const sensor_msgs::Imu::ConstPtr& imuIn)
 {
   double roll, pitch, yaw;
@@ -779,7 +807,9 @@ void imuHandler(const sensor_msgs::Imu::ConstPtr& imuIn)
   //Here roll pitch yaw is in the global frame
   tf::Matrix3x3(orientation).getRPY(roll, pitch, yaw);
 
-  //Subtract the influence of gravity, find the actual value of the acceleration in the xyz direction, and exchange the coordinate axes, unify them to the right-hand coordinate system with the z-axis forward and the x-axis left. After the exchange, RPY corresponds to the fixed axes ZXY(RPY---ZXY). Now R = Ry(yaw)*Rx(pitch)*Rz(roll).
+  //Subtract the influence of gravity, find the actual value of the acceleration in the xyz direction, and exchange the coordinate axes, unify 
+  //them to the right-hand coordinate system with the z-axis forward and the x-axis left. After the exchange, RPY corresponds to the fixed axes 
+  //ZXY(RPY---ZXY). Now R = Ry(yaw)*Rx(pitch)*Rz(roll).
   float accX = imuIn->linear_acceleration.y - sin(roll) * cos(pitch) * 9.81;
   float accY = imuIn->linear_acceleration.z - cos(roll) * cos(pitch) * 9.81;
   float accZ = imuIn->linear_acceleration.x + sin(pitch) * 9.81;
